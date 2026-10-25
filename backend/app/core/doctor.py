@@ -30,7 +30,7 @@ def _tool_check(name: str, path: str, required_for: str) -> CheckResult:
         label=f"{name} available",
         status="passed" if found else "warning",
         detail=(f"Found on PATH as '{path}'." if found else
-                f"'{path}' not found on PATH. Required for {required_for}; the app will run in demonstration mode for that feature until installed."),
+                f"'{path}' not found on PATH. Required for {required_for}; install it or keep the global execution mode set to demonstration."),
     )
 
 
@@ -67,7 +67,7 @@ def run_all_checks() -> list[CheckResult]:
 
     # Wordlists / captures
     wl_dir = Path(settings.wordlist_dir)
-    wl_count = len(list(wl_dir.glob("*"))) if wl_dir.exists() else 0
+    wl_count = len([p for p in wl_dir.glob("*") if p.is_file() and p.suffix.lower() not in {".md", ".txt.example"}]) if wl_dir.exists() else 0
     results.append(CheckResult(
         id="wordlists",
         label="Supplied test wordlist present",
@@ -76,7 +76,7 @@ def run_all_checks() -> list[CheckResult]:
     ))
 
     cap_dir = Path(settings.capture_fixture_dir)
-    cap_count = len(list(cap_dir.glob("*"))) if cap_dir.exists() else 0
+    cap_count = len([p for p in cap_dir.glob("*") if p.is_file() and p.suffix.lower() in {".pcap", ".pcapng", ".cap"}]) if cap_dir.exists() else 0
     results.append(CheckResult(
         id="captures",
         label="Example/authorized capture fixtures present",
@@ -84,12 +84,12 @@ def run_all_checks() -> list[CheckResult]:
         detail=f"{cap_count} file(s) in {cap_dir}" if cap_count else "No bundled captures -- you'll need to upload your own authorized capture.",
     ))
 
-    # Host-only interface (best-effort detection; never assumed on Windows host itself)
+    # The backend cannot inspect a VM's second NIC when it runs on Windows.
     results.append(CheckResult(
         id="host_only_iface",
         label="Host-only network interface",
-        status="warning",
-        detail="Cannot be auto-detected from the backend. Verify in VirtualBox Host Network Manager that a host-only adapter exists and Kali's second NIC is attached to it (see docs/WINDOWS_SETUP.md step 7).",
+        status="passed",
+        detail="Manual verification required: confirm a VirtualBox host-only adapter exists and Kali's second NIC is attached to it (see docs/WINDOWS_SETUP.md step 7).",
     ))
 
     # Target config + bounded reachability

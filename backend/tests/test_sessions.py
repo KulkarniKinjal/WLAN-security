@@ -5,7 +5,7 @@ def _upload(client):
     import io
     resp = client.post(
         "/api/uploads/capture",
-        files={"file": ("test.pcap", io.BytesIO(b"fake pcap bytes"), "application/octet-stream")},
+        files={"file": ("test.pcap", io.BytesIO(b"\xd4\xc3\xb2\xa1" + b"\x00" * 20), "application/octet-stream")},
     )
     return resp.json()["upload_id"]
 
@@ -91,7 +91,10 @@ def test_awareness_full_flow(client):
     resp = client.post("/api/sessions/awareness", json={"name": "a1", "scenario_id": "oversharing_portal"})
     assert resp.status_code == 200
     session_id = resp.json()["id"]
-    submit = client.post(f"/api/sessions/awareness/{session_id}/submit", json={"step1": "Leave and don't connect"})
+    submit = client.post(
+        f"/api/sessions/awareness/{session_id}/submit",
+        json={"step1": "Leave and don't connect", "step2": "Ask venue staff to confirm the portal"},
+    )
     assert submit.status_code == 200
     body = submit.json()
     assert body["input_summary"]["score"] == 100

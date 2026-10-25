@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
+from datetime import datetime, timezone
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session as DBSession
@@ -77,9 +79,9 @@ def create_wireless_session(payload: SessionCreateWireless, db: DBSession = Depe
 
     def work(db2: DBSession, row: SessionModel, check_cancelled):
         if scenario.id == "wep_key_recovery_demo":
-            result = wireless_adapter.run_wep_recovery(capture_path, demonstration=demo)
+            result = wireless_adapter.run_wep_recovery(capture_path, demonstration=demo, session_id=row.id, check_cancelled=check_cancelled)
         else:
-            result = wireless_adapter.run_wpa_dictionary_test(capture_path, wordlist_path, demonstration=demo)
+            result = wireless_adapter.run_wpa_dictionary_test(capture_path, wordlist_path, demonstration=demo, session_id=row.id, check_cancelled=check_cancelled)
         row.outcome = SecurityOutcome(result.outcome)
         row.evidence = result.evidence
         row.explanation = result.explanation
@@ -120,7 +122,7 @@ def create_metasploit_session(payload: SessionCreateMetasploit, db: DBSession = 
     demo = _current_mode() == ExecutionMode.demonstration
 
     def work(db2: DBSession, row: SessionModel, check_cancelled):
-        result = msf_adapter.run_vsftpd_backdoor_scenario(demonstration=demo)
+        result = msf_adapter.run_vsftpd_backdoor_scenario(demonstration=demo, session_id=row.id, check_cancelled=check_cancelled)
         row.outcome = SecurityOutcome(result.outcome)
         row.evidence = result.evidence
         row.explanation = result.explanation
@@ -231,7 +233,14 @@ def cancel_session(session_id: str, db: DBSession = Depends(get_db)):
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+    if session.status in {JobStatus.succeeded, JobStatus.failed, JobStatus.cancelled, JobStatus.timed_out}:
+        raise HTTPException(409, "This session is already complete")
     request_cancel(session_id)
+    if session.status == JobStatus.queued:
+        session.status = JobStatus.cancelled
+        session.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(session)
     return session
 
 
@@ -248,6 +257,13 @@ def delete_session(session_id: str, db: DBSession = Depends(get_db)):
 
 
 def _find_upload(upload_id: str) -> Optional[Path]:
+    try:
+        uuid.UUID(upload_id)
+    except ValueError:
+        return None
     up_dir = Path(settings.upload_dir)
-    matches = list(up_dir.glob(f"{upload_id}.*"))
-    return matches[0] if matches else None
+    matches = [
+        p for p in up_dir.glob(f"{upload_id}.*")
+        if p.is_file() and p.suffix.lower() in {".pcap", ".pcapng", ".cap"}
+    ]
+    return matches[0] if len(matches) == 1 else None

@@ -2,7 +2,7 @@
 Fictional captive-portal social-engineering simulator.
 
 Entirely self-contained and client-driven: the frontend renders invented
-portal branding ("CloudNet Guest Wi-Fi" -- not a real company) and the
+portal branding and the
 backend only ever receives the student's multiple-choice decisions. No
 free-text password field exists in the UI; a "dummy credentials" button
 submits a fixed literal string so nothing resembling a real password is
@@ -35,9 +35,9 @@ SCENARIOS: dict[str, AwarenessScenario] = {
     "oversharing_portal": AwarenessScenario(
         id="oversharing_portal",
         title="The 'Free Airport Wi-Fi' that wants everything",
-        brand="CloudNet Guest Wi-Fi (fictional)",
+        brand="CloudHarbor Guest Wi-Fi (fictional)",
         narrative=(
-            "You're at a café. A network called 'CloudNet Guest Wi-Fi' shows a captive portal "
+            "You're at a café. A network called 'CloudHarbor Guest Wi-Fi' shows a captive portal "
             "asking for your full name, date of birth, and phone number before granting access."
         ),
         steps=(
@@ -48,14 +48,21 @@ SCENARIOS: dict[str, AwarenessScenario] = {
                 options=("Proceed and fill in real info", "Proceed using obviously fake dummy info", "Leave and don't connect"),
                 safe_option="Leave and don't connect",
             ),
+            AwarenessStep(
+                id="step2",
+                prompt="The portal address uses an unfamiliar domain and has no clear venue contact. What do you do?",
+                red_flag="A mismatched domain and missing operator contact make the page difficult to verify.",
+                options=("Continue because the page looks polished", "Ask venue staff to confirm the portal", "Enter the requested details quickly"),
+                safe_option="Ask venue staff to confirm the portal",
+            ),
         ),
     ),
     "urgency_threat_portal": AwarenessScenario(
         id="urgency_threat_portal",
         title="'Your session will be suspended' portal",
-        brand="SkyPort WiFi (fictional)",
+        brand="Northstar Guest Access (fictional)",
         narrative=(
-            "A portal named 'SkyPort WiFi' displays a red banner: 'URGENT: Verify your identity "
+            "A portal named 'Northstar Guest Access' displays a red banner: 'URGENT: Verify your identity "
             "within 2 minutes or your access will be permanently suspended.'"
         ),
         steps=(
@@ -66,15 +73,22 @@ SCENARIOS: dict[str, AwarenessScenario] = {
                 options=("Rush to verify before the timer ends", "Ignore the timer and inspect the page first", "Close the tab immediately without looking"),
                 safe_option="Ignore the timer and inspect the page first",
             ),
+            AwarenessStep(
+                id="step2",
+                prompt="The page asks you to install an unknown browser extension to continue. What do you do?",
+                red_flag="Unexpected software installation is not necessary for ordinary guest Wi-Fi access.",
+                options=("Install it to avoid losing access", "Close the page and use another connection", "Disable browser warnings and continue"),
+                safe_option="Close the page and use another connection",
+            ),
         ),
     ),
     "inconsistent_identity_portal": AwarenessScenario(
         id="inconsistent_identity_portal",
         title="The portal with mismatched branding",
-        brand="\"Marriot_Guest\" network, portal titled \"HiltonConnect\" (fictional, deliberately inconsistent)",
+        brand="\"Pinebeam_Guest\" network, portal titled \"CedarLink\" (fictional, deliberately inconsistent)",
         narrative=(
-            "You join a network called 'Marriot_Guest' (note the misspelling), but the captive "
-            "portal that loads is titled 'HiltonConnect' with a different logo and color scheme."
+            "You join a network called 'Pinebeam_Guest', but the captive "
+            "portal that loads is titled 'CedarLink' with a different logo and color scheme."
         ),
         steps=(
             AwarenessStep(
@@ -83,6 +97,13 @@ SCENARIOS: dict[str, AwarenessScenario] = {
                 red_flag="Inconsistent names/branding between the Wi-Fi network and its portal is a strong impersonation signal.",
                 options=("Assume it's just a glitch and continue", "Ask staff to confirm the official network name first", "Enter your room number and loyalty ID to be safe"),
                 safe_option="Ask staff to confirm the official network name first",
+            ),
+            AwarenessStep(
+                id="step2",
+                prompt="The portal asks for a loyalty number before showing any terms. What do you do?",
+                red_flag="A loyalty number is unrelated to basic network access and creates unnecessary exposure.",
+                options=("Enter it because the logo looks familiar", "Ask staff for the official access process", "Reuse an account number from another service"),
+                safe_option="Ask staff for the official access process",
             ),
         ),
     ),

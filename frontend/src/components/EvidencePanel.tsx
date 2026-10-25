@@ -1,7 +1,18 @@
 import { SessionDetail } from "../api/client";
 import StatusChip from "./StatusChip";
+import { api } from "../api/client";
+import { useState } from "react";
 
 export default function EvidencePanel({ session }: { session: SessionDetail }) {
+  const [downloadError, setDownloadError] = useState("");
+  const download = async (format: "pdf" | "json") => {
+    try {
+      setDownloadError("");
+      await api.downloadReport(session.id, format);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Download failed");
+    }
+  };
   return (
     <div className="bg-white border border-slateblue/10 rounded-md divide-y divide-slateblue/10">
       <div className="p-4 flex items-center justify-between">
@@ -53,8 +64,9 @@ export default function EvidencePanel({ session }: { session: SessionDetail }) {
       )}
 
       <div className="p-4 flex gap-3 text-sm">
-        <a className="text-teal underline" href={`http://127.0.0.1:8000/api/reports/${session.id}.pdf`} target="_blank" rel="noreferrer">Download PDF report</a>
-        <a className="text-teal underline" href={`http://127.0.0.1:8000/api/reports/${session.id}.json`} target="_blank" rel="noreferrer">Download JSON</a>
+        <button className="text-teal underline" onClick={() => download("pdf")}>Download PDF report</button>
+        <button className="text-teal underline" onClick={() => download("json")}>Download JSON</button>
+        {downloadError && <span className="text-red-700">{downloadError}</span>}
       </div>
     </div>
   );

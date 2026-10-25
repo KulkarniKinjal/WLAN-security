@@ -25,15 +25,46 @@ from app.core.database import SessionLocal
 from app.models.session import JobStatus, Session as SessionModel
 
 _lock = threading.Semaphore(settings.max_concurrent_jobs)
-_cancel_flags: dict[str, bool] = {}
+_cancel_flags: dict[str, threading.Event] = {}
+_processes: dict[str, object] = {}
+_state_lock = threading.Lock()
 
 
 def request_cancel(session_id: str) -> None:
-    _cancel_flags[session_id] = True
+    with _state_lock:
+        event = _cancel_flags.setdefault(session_id, threading.Event())
+        event.set()
+        process = _processes.get(session_id)
+    if process is not None:
+        terminate_process(process)
 
 
 def is_cancelled(session_id: str) -> bool:
-    return _cancel_flags.get(session_id, False)
+    event = _cancel_flags.get(session_id)
+    return event.is_set() if event else False
+
+
+def register_process(session_id: str, process: object) -> None:
+    with _state_lock:
+        _processes[session_id] = process
+    if is_cancelled(session_id):
+        terminate_process(process)
+
+
+def unregister_process(session_id: str, process: object) -> None:
+    with _state_lock:
+        if _processes.get(session_id) is process:
+            _processes.pop(session_id, None)
+
+
+def terminate_process(process: object) -> None:
+    terminate = getattr(process, "terminate", None)
+    if callable(terminate):
+        terminate()
+    poll = getattr(process, "poll", None)
+    kill = getattr(process, "kill", None)
+    if callable(poll) and callable(kill) and poll() is None:
+        kill()
 
 
 def recover_interrupted_jobs() -> None:
@@ -60,6 +91,7 @@ def run_job(session_id: str, work_fn) -> None:
     def _runner():
         acquired = _lock.acquire(timeout=1)
         db: DBSession = SessionLocal()
+        _cancel_flags.setdefault(session_id, threading.Event())
         try:
             row = db.get(SessionModel, session_id)
             if row is None:
@@ -74,6 +106,7 @@ def run_job(session_id: str, work_fn) -> None:
                         row.finished_at = datetime.now(timezone.utc)
                         db.commit()
                         return
+                acquired = True
 
             row.status = JobStatus.validating
             row.started_at = datetime.now(timezone.utc)
@@ -84,13 +117,19 @@ def run_job(session_id: str, work_fn) -> None:
             error_holder: dict = {}
 
             def _target():
+                worker_db = SessionLocal()
                 try:
-                    row.status = JobStatus.running
-                    db.commit()
+                    worker_row = worker_db.get(SessionModel, session_id)
+                    if worker_row is None or is_cancelled(session_id):
+                        return
+                    worker_row.status = JobStatus.running
+                    worker_db.commit()
                     result_holder["ok"] = True
-                    work_fn(db, row, lambda: is_cancelled(session_id))
+                    work_fn(worker_db, worker_row, lambda: is_cancelled(session_id))
                 except Exception as exc:  # noqa: BLE001
                     error_holder["error"] = str(exc)
+                finally:
+                    worker_db.close()
 
             t = threading.Thread(target=_target, daemon=True)
             t.start()
@@ -101,6 +140,10 @@ def run_job(session_id: str, work_fn) -> None:
             row.finished_at = datetime.now(timezone.utc)
 
             if t.is_alive():
+                with _state_lock:
+                    process = _processes.get(session_id)
+                if process is not None:
+                    terminate_process(process)
                 row.status = JobStatus.timed_out
                 row.error_message = f"Job exceeded the {settings.job_timeout_seconds}s timeout."
             elif is_cancelled(session_id):
@@ -112,7 +155,9 @@ def run_job(session_id: str, work_fn) -> None:
                 row.status = JobStatus.succeeded
             db.commit()
         finally:
-            _cancel_flags.pop(session_id, None)
+            with _state_lock:
+                _cancel_flags.pop(session_id, None)
+                _processes.pop(session_id, None)
             if acquired:
                 _lock.release()
             db.close()

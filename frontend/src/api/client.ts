@@ -1,9 +1,11 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_TOKEN = import.meta.env.VITE_API_TOKEN as string | undefined;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
+      ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
       ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
     },
@@ -54,6 +56,19 @@ export const api = {
   deleteSession: (id: string) => request<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
   pdfReportUrl: (id: string) => `${BASE_URL}/api/reports/${id}.pdf`,
   jsonReportUrl: (id: string) => `${BASE_URL}/api/reports/${id}.json`,
+  downloadReport: async (id: string, format: "pdf" | "json") => {
+    const response = await fetch(`${BASE_URL}/api/reports/${id}.${format}`, {
+      headers: API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {},
+    });
+    if (!response.ok) throw new Error(`Report download failed (${response.status})`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attacklab-${id}.${format}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 export interface DoctorCheck {

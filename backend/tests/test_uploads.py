@@ -12,12 +12,12 @@ def test_reject_bad_extension(client):
 def test_accept_pcap_extension(client):
     resp = client.post(
         "/api/uploads/capture",
-        files={"file": ("test.pcap", io.BytesIO(b"fake pcap bytes"), "application/octet-stream")},
+        files={"file": ("test.pcap", io.BytesIO(b"\xd4\xc3\xb2\xa1" + b"\x00" * 20), "application/octet-stream")},
     )
     assert resp.status_code == 200
     body = resp.json()
     assert "upload_id" in body
-    assert body["size_bytes"] == len(b"fake pcap bytes")
+    assert body["size_bytes"] == 24
 
 
 def test_upload_size_limit(client, monkeypatch):

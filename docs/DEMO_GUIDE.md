@@ -18,7 +18,7 @@ a live tool/VM isn't available at demo time.
 - Narrate while it runs: "This never fabricates a result — if the tool isn't installed, or the capture has no usable handshake, it will say so rather than pretend to succeed."
 - Show the **Evidence panel**: objective / what it proves / what it does NOT prove / defense.
 
-**Fallback:** if `aircrack-ng`/`tshark` aren't installed on the demo machine, the same flow runs in demonstration mode automatically — the result is clearly labeled "DEMONSTRATION FIXTURE" throughout the UI and PDF.
+**Fallback:** if `aircrack-ng`/`tshark` aren't installed on the demo machine, set the global `EXECUTION_MODE=demonstration` value in `backend/.env` before starting the backend. The result is clearly labeled "DEMONSTRATION FIXTURE" throughout the UI and PDF; there is no automatic per-feature fallback.
 
 ## 2. Metasploit module (2–3 min)
 

@@ -21,11 +21,13 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
 from app.core.security import is_within_cidr
+from app.jobs.manager import register_process, unregister_process
 
 BACKDOOR_PORT = 6200
 
@@ -79,7 +81,7 @@ def validate_target() -> tuple[bool, str]:
     return True, "Target validated: in-range and FTP service reachable."
 
 
-def run_vsftpd_backdoor_scenario(demonstration: bool) -> MetasploitResult:
+def run_vsftpd_backdoor_scenario(demonstration: bool, session_id: str = "", check_cancelled=lambda: False) -> MetasploitResult:
     explanation_base = {
         "objective": "Confirm CVE-2011-2523: sending ':)' as the FTP username opens an unauthenticated shell listener on TCP 6200.",
         "proves": "The configured target is running the backdoored vsftpd 2.3.4 build and the backdoor is exploitable.",
@@ -118,28 +120,32 @@ def run_vsftpd_backdoor_scenario(demonstration: bool) -> MetasploitResult:
         rc_path = f.name
 
     try:
-        proc = subprocess.run(
-            [settings.msfconsole_path, "-q", "-r", rc_path],
-            capture_output=True, text=True, timeout=settings.job_timeout_seconds,
-        )
-    except subprocess.TimeoutExpired:
-        return MetasploitResult(
-            outcome="evidence_invalid",
-            evidence={"fixture": False, "error": "timed out"},
-            explanation=explanation_base,
-            raw_log="msfconsole did not finish within the configured timeout.",
-        )
+        kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        proc = subprocess.Popen([settings.msfconsole_path, "-q", "-r", rc_path], **kwargs)
+        register_process(session_id, proc)
+        started = time.monotonic()
+        while proc.poll() is None:
+            if check_cancelled() or time.monotonic() - started > settings.job_timeout_seconds:
+                proc.terminate()
+                return MetasploitResult("evidence_invalid", {"fixture": False, "error": "cancelled or timed out"}, explanation_base, "msfconsole did not complete.")
+            time.sleep(0.1)
+        stdout, stderr = proc.communicate()
+        log = stdout + "\n" + stderr
+    except OSError as exc:
+        return MetasploitResult("evidence_invalid", {"fixture": False, "error": str(exc)}, explanation_base, str(exc))
     finally:
+        if "proc" in locals():
+            unregister_process(session_id, proc)
         Path(rc_path).unlink(missing_ok=True)
-
-    log = proc.stdout + "\n" + proc.stderr
 
     # Success condition is the ACTUAL behavior (port 6200 opened and a
     # session was listed), not merely msfconsole exiting 0.
     port_opened_after = _tcp_check(target, BACKDOOR_PORT, timeout=2.0)
     session_opened = "Command shell session" in log or "sessions -l" in log and "Id  Name" in log
 
-    if "Command shell session" in log:
+    if session_opened and port_opened_after:
         return MetasploitResult(
             outcome="exploit_confirmed",
             evidence={"fixture": False, "session_opened": True, "backdoor_port_reachable_after": port_opened_after},

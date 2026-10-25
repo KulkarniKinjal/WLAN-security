@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ShieldAlert, Globe2, LockKeyhole } from "lucide-react";
 import { api, AwarenessScenario, SessionDetail } from "../api/client";
 
 type Phase = "pick" | "narrative" | "portal" | "debrief";
@@ -10,8 +10,10 @@ export default function Awareness() {
   const [phase, setPhase] = useState<Phase>("pick");
   const [decisions, setDecisions] = useState<Record<string, string>>({});
   const [result, setResult] = useState<SessionDetail | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => { api.awarenessScenarios().then(setScenarios); }, []);
+  useEffect(() => { api.awarenessScenarios().then(setScenarios).catch((e) => setError(String(e))); }, []);
 
   const pick = (s: AwarenessScenario) => {
     setChosen(s);
@@ -21,14 +23,22 @@ export default function Awareness() {
   };
 
   const choose = async (stepId: string, option: string) => {
+    if (submitting) return;
     const next = { ...decisions, [stepId]: option };
     setDecisions(next);
     if (!chosen) return;
     if (Object.keys(next).length >= chosen.steps.length) {
-      const session = await api.createAwarenessSession({ name: `Awareness: ${chosen.title}`, scenario_id: chosen.id });
-      const submitted = await api.submitAwareness(session.id, next);
-      setResult(submitted);
-      setPhase("debrief");
+      try {
+        setSubmitting(true);
+        const session = await api.createAwarenessSession({ name: `Awareness: ${chosen.title}`, scenario_id: chosen.id });
+        const submitted = await api.submitAwareness(session.id, next);
+        setResult(submitted);
+        setPhase("debrief");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not submit the simulation");
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -39,6 +49,7 @@ export default function Awareness() {
         A browser-only simulation with invented, fictional Wi-Fi branding. No real network is created, and no real or dummy
         credentials you type are ever stored -- only your decisions and a score.
       </p>
+      {error && <div className="border border-red-200 bg-red-50 text-red-800 rounded-md p-3 text-sm">{error}</div>}
 
       {phase === "pick" && (
         <div className="grid gap-4">
@@ -61,6 +72,18 @@ export default function Awareness() {
 
       {phase === "portal" && chosen && (
         <div className="space-y-4">
+          <div className="bg-slate-100 border border-slateblue/20 rounded-xl p-2 shadow-sm">
+            <div className="bg-white rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-slateblue/10 text-xs text-slateblue/60">
+                <Globe2 size={14} /> portal.cloudharbor.example <LockKeyhole size={13} className="ml-auto text-teal" />
+              </div>
+              <div className="p-5 bg-gradient-to-br from-iceblue to-white">
+                <div className="text-xs uppercase tracking-widest text-teal font-semibold">{chosen.brand}</div>
+                <div className="text-lg font-semibold text-navy mt-1">Connect to guest internet</div>
+                <p className="text-xs text-slateblue/70 mt-1">Inspect the details before choosing how to continue.</p>
+              </div>
+            </div>
+          </div>
           {chosen.steps.map((step) => (
             <div key={step.id} className="bg-white border border-slateblue/10 rounded-md p-6 space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -76,6 +99,7 @@ export default function Awareness() {
             </div>
           ))}
           <p className="text-xs text-slateblue/50">If you choose to "proceed", any credential field in a real version of this simulator would only ever accept a fixed dummy value -- never free text.</p>
+          {submitting && <p className="text-sm text-teal">Recording your decisions...</p>}
         </div>
       )}
 
