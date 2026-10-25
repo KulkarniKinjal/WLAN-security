@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/client.ts","./src/components/evidencepanel.tsx","./src/components/layout.tsx","./src/components/statuschip.tsx","./src/pages/awareness.tsx","./src/pages/dashboard.tsx","./src/pages/doctor.tsx","./src/pages/history.tsx","./src/pages/metasploit.tsx","./src/pages/wireless.tsx"],"version":"5.9.3"}
