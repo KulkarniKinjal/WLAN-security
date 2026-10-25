@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+* {
+  outline-color: #238C95;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid #238C95;
+  outline-offset: 2px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.status-chip.passed, .status-chip.succeeded, .status-chip.exploit_confirmed, .status-chip.key_recovered {
+  background: #E6F4EA; color: #1E7B34; border-color: #BEE3C8;
+}
+.status-chip.warning, .status-chip.queued, .status-chip.validating, .status-chip.running, .status-chip.not_found_in_wordlist {
+  background: #FFF3E0; color: #A05A00; border-color: #FFE0B2;
+}
+.status-chip.failed, .status-chip.timed_out, .status-chip.evidence_invalid, .status-chip.exploit_not_confirmed {
+  background: #FDEBEC; color: #B3261E; border-color: #F6C6C6;
+}
+.status-chip.cancelled {
+  background: #ECEFF1; color: #546E7A; border-color: #CFD8DC;
+}
