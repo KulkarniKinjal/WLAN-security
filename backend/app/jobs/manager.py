@@ -58,6 +58,12 @@ def unregister_process(session_id: str, process: object) -> None:
 
 
 def terminate_process(process: object) -> None:
+    try:
+        from app.core.processes import terminate_process_group
+        terminate_process_group(process)
+        return
+    except (ImportError, TypeError):
+        pass
     terminate = getattr(process, "terminate", None)
     if callable(terminate):
         terminate()

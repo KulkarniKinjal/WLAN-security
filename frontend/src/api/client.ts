@@ -74,7 +74,7 @@ export const api = {
 export interface DoctorCheck {
   id: string;
   label: string;
-  status: "passed" | "warning" | "failed";
+  status: "passed" | "warning" | "failed" | "manual";
   detail: string;
 }
 export interface DoctorReport {

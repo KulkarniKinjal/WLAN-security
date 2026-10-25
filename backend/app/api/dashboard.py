@@ -20,7 +20,7 @@ def get_dashboard(db: DBSession = Depends(get_db)):
     overall = "passed"
     if any(c.status == "failed" for c in checks):
         overall = "failed"
-    elif any(c.status == "warning" for c in checks):
+    elif any(c.status in {"warning", "manual"} for c in checks):
         overall = "warning"
 
     status_counts = dict(

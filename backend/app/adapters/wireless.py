@@ -17,14 +17,13 @@ Honesty rules enforced here (see project spec section 6.C):
 """
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.processes import ProcessResult, run_process
 from app.jobs.manager import register_process, unregister_process
 
 
@@ -40,26 +39,12 @@ def tool_available(path: str) -> bool:
     return shutil.which(path) is not None
 
 
-def _run_tool(session_id: str, args: list[str], timeout: float, check_cancelled) -> tuple[int, str, str, bool]:
-    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
-    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    proc = subprocess.Popen(args, **kwargs)
-    register_process(session_id, proc)
-    started = time.monotonic()
-    try:
-        while proc.poll() is None:
-            if check_cancelled():
-                proc.terminate()
-                return -1, "", "cancelled", True
-            if time.monotonic() - started > timeout:
-                proc.terminate()
-                return -1, "", "timed out", True
-            time.sleep(0.1)
-        stdout, stderr = proc.communicate()
-        return proc.returncode, stdout, stderr, False
-    finally:
-        unregister_process(session_id, proc)
+def _run_tool(session_id: str, args: list[str], timeout: float, check_cancelled) -> ProcessResult:
+    return run_process(
+        args, timeout, check_cancelled,
+        lambda process: register_process(session_id, process),
+        lambda process: unregister_process(session_id, process),
+    )
 
 
 def get_capture_metadata(capture_path: Path) -> dict:
@@ -94,16 +79,32 @@ def _has_complete_eapol_handshake(capture_path: Path) -> tuple[bool, str]:
         if sae.stdout.strip():
             return False, "Capture contains WPA3/SAE authentication; WPA/WPA2 dictionary testing does not apply"
         out = subprocess.run(
-            [settings.tshark_path, "-r", str(capture_path), "-Y", "eapol", "-T", "fields", "-e", "eapol.type"],
+            [
+                settings.tshark_path, "-r", str(capture_path), "-Y",
+                "eapol && wlan_rsna_eapol.keydes.msgnr",
+                "-T", "fields", "-E", "separator=\t",
+                "-e", "wlan.bssid", "-e", "wlan.sa", "-e", "wlan.da",
+                "-e", "wlan_rsna_eapol.keydes.msgnr",
+            ],
             capture_output=True, text=True, timeout=30,
         )
     except Exception as exc:  # noqa: BLE001
         return False, f"tshark failed to read capture: {exc}"
-    types = {l.strip() for l in out.stdout.splitlines() if l.strip()}
-    missing = {"1", "2", "3", "4"} - types
-    if missing:
-        return False, f"Handshake is missing EAPOL message type(s): {', '.join(sorted(missing))}"
-    return True, f"Complete EAPOL message set found ({len(types)} message types)"
+    exchanges: dict[tuple[str, frozenset[str]], set[str]] = {}
+    for line in out.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) != 4:
+            continue
+        bssid, source, destination, message_number = (field.strip().lower() for field in fields)
+        if not bssid or not source or not destination or message_number not in {"1", "2", "3", "4"}:
+            continue
+        pair = (bssid, frozenset((source, destination)))
+        exchanges.setdefault(pair, set()).add(message_number)
+    complete = next((pair for pair, messages in exchanges.items() if messages == {"1", "2", "3", "4"}), None)
+    if complete is None:
+        observed = sorted({message for messages in exchanges.values() for message in messages})
+        return False, f"No complete 4-way handshake found for one BSSID/client exchange; observed message numbers: {', '.join(observed) or 'none'}"
+    return True, f"Complete 4-way handshake found for BSSID {complete[0]} and its client exchange"
 
 
 def run_wep_recovery(capture_path: Path, demonstration: bool, session_id: str = "", check_cancelled=lambda: False) -> WirelessResult:
@@ -135,20 +136,20 @@ def run_wep_recovery(capture_path: Path, demonstration: bool, session_id: str = 
         )
 
     try:
-        returncode, stdout, stderr, interrupted = _run_tool(session_id, [settings.aircrack_ng_path, "-a", "1", str(capture_path)], settings.job_timeout_seconds, check_cancelled)
+        result = _run_tool(session_id, [settings.aircrack_ng_path, "-a", "1", str(capture_path)], settings.job_timeout_seconds, check_cancelled)
     except OSError as exc:
         return WirelessResult("evidence_invalid", {"fixture": False, "error": str(exc)}, explanation_base, str(exc))
-    if interrupted:
+    if result.interrupted:
         return WirelessResult(
             outcome="evidence_invalid",
-            evidence={"fixture": False, "error": stderr},
+            evidence={"fixture": False, "error": result.reason},
             explanation=explanation_base,
-            raw_log=f"aircrack-ng did not complete: {stderr}.",
+            raw_log=f"aircrack-ng did not complete: {result.reason}.",
         )
 
-    log = stdout + "\n" + stderr
-    if returncode == 0 and "KEY FOUND" in stdout:
-        key_line = next((l for l in stdout.splitlines() if "KEY FOUND" in l), "")
+    log = result.stdout + "\n" + result.stderr
+    if result.returncode == 0 and "KEY FOUND" in result.stdout:
+        key_line = next((l for l in result.stdout.splitlines() if "KEY FOUND" in l), "")
         return WirelessResult(
             outcome="key_recovered",
             evidence={"fixture": False, "key_line": key_line},
@@ -157,7 +158,7 @@ def run_wep_recovery(capture_path: Path, demonstration: bool, session_id: str = 
         )
     return WirelessResult(
         outcome="evidence_invalid",
-        evidence={"fixture": False, "error": f"aircrack-ng exited with code {returncode}" if returncode else "key_not_found"},
+        evidence={"fixture": False, "error": f"aircrack-ng exited with code {result.returncode}" if result.returncode else "key_not_found"},
         explanation=explanation_base,
         raw_log=log[-4000:] or "aircrack-ng ran but did not report KEY FOUND. The capture may not contain enough unique IVs.",
     )
@@ -201,20 +202,20 @@ def run_wpa_dictionary_test(capture_path: Path, wordlist_path: Path, demonstrati
         )
 
     try:
-        returncode, stdout, stderr, interrupted = _run_tool(session_id, [settings.aircrack_ng_path, "-w", str(wordlist_path), str(capture_path)], settings.job_timeout_seconds, check_cancelled)
+        result = _run_tool(session_id, [settings.aircrack_ng_path, "-w", str(wordlist_path), str(capture_path)], settings.job_timeout_seconds, check_cancelled)
     except OSError as exc:
         return WirelessResult("evidence_invalid", {"fixture": False, "error": str(exc)}, explanation_base, str(exc))
-    if interrupted:
+    if result.interrupted:
         return WirelessResult(
             outcome="evidence_invalid",
-            evidence={"fixture": False, "error": stderr},
+            evidence={"fixture": False, "error": result.reason},
             explanation=explanation_base,
-            raw_log=f"aircrack-ng did not complete: {stderr}. Try a smaller wordlist.",
+            raw_log=f"aircrack-ng did not complete: {result.reason}. Try a smaller wordlist.",
         )
 
-    log = stdout + "\n" + stderr
-    if returncode == 0 and "KEY FOUND" in stdout:
-        key_line = next((l for l in stdout.splitlines() if "KEY FOUND" in l), "")
+    log = result.stdout + "\n" + result.stderr
+    if result.returncode == 0 and "KEY FOUND" in result.stdout:
+        key_line = next((l for l in result.stdout.splitlines() if "KEY FOUND" in l), "")
         return WirelessResult(
             outcome="key_recovered",
             evidence={"fixture": False, "key_line": key_line},
@@ -222,8 +223,8 @@ def run_wpa_dictionary_test(capture_path: Path, wordlist_path: Path, demonstrati
             raw_log=log[-4000:],
         )
     return WirelessResult(
-        outcome="not_found_in_wordlist" if returncode == 0 else "evidence_invalid",
-        evidence={"fixture": False, "error": f"aircrack-ng exited with code {returncode}" if returncode else "key_not_found"},
+        outcome="not_found_in_wordlist" if result.returncode == 0 else "evidence_invalid",
+        evidence={"fixture": False, "error": f"aircrack-ng exited with code {result.returncode}" if result.returncode else "key_not_found"},
         explanation=explanation_base,
         raw_log=log[-4000:] or "aircrack-ng completed; passphrase was not present in the supplied wordlist.",
     )

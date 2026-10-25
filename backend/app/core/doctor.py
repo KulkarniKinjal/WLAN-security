@@ -88,7 +88,7 @@ def run_all_checks() -> list[CheckResult]:
     results.append(CheckResult(
         id="host_only_iface",
         label="Host-only network interface",
-        status="passed",
+        status="manual",
         detail="Manual verification required: confirm a VirtualBox host-only adapter exists and Kali's second NIC is attached to it (see docs/WINDOWS_SETUP.md step 7).",
     ))
 

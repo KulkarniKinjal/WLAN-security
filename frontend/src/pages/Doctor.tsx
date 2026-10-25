@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, AlertTriangle, XCircle, RefreshCw } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, HelpCircle } from "lucide-react";
 import { api, DoctorReport } from "../api/client";
 
 function Icon({ status }: { status: string }) {
   if (status === "passed") return <CheckCircle2 className="text-green-600" size={18} />;
   if (status === "warning") return <AlertTriangle className="text-amber-500" size={18} />;
+  if (status === "manual") return <HelpCircle className="text-blue-600" size={18} />;
   return <XCircle className="text-red-600" size={18} />;
 }
 
@@ -28,8 +29,7 @@ export default function Doctor() {
         </button>
       </div>
       <p className="text-sm text-slateblue/70">
-        These checks are read-only and never modify your system. A Warning usually means a tool isn't installed yet
-        (the app will use demonstration mode for that feature until it is) -- see docs/WINDOWS_SETUP.md for installation steps.
+        These checks are read-only and never modify your system. A Manual check requires you to confirm a VM or network setting yourself.
       </p>
 
       {!report && <div className="text-sm text-slateblue/60">Running checks...</div>}

@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import shutil
 import socket
-import subprocess
 import tempfile
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
+from app.core.processes import run_process
 from app.core.security import is_within_cidr
 from app.jobs.manager import register_process, unregister_process
 
@@ -120,24 +119,19 @@ def run_vsftpd_backdoor_scenario(demonstration: bool, session_id: str = "", chec
         rc_path = f.name
 
     try:
-        kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
-        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        proc = subprocess.Popen([settings.msfconsole_path, "-q", "-r", rc_path], **kwargs)
-        register_process(session_id, proc)
-        started = time.monotonic()
-        while proc.poll() is None:
-            if check_cancelled() or time.monotonic() - started > settings.job_timeout_seconds:
-                proc.terminate()
-                return MetasploitResult("evidence_invalid", {"fixture": False, "error": "cancelled or timed out"}, explanation_base, "msfconsole did not complete.")
-            time.sleep(0.1)
-        stdout, stderr = proc.communicate()
-        log = stdout + "\n" + stderr
+        result = run_process(
+            [settings.msfconsole_path, "-q", "-r", rc_path],
+            settings.job_timeout_seconds,
+            check_cancelled,
+            lambda process: register_process(session_id, process),
+            lambda process: unregister_process(session_id, process),
+        )
+        if result.interrupted:
+            return MetasploitResult("evidence_invalid", {"fixture": False, "error": result.reason}, explanation_base, f"msfconsole did not complete: {result.reason}.")
+        log = result.stdout + "\n" + result.stderr
     except OSError as exc:
         return MetasploitResult("evidence_invalid", {"fixture": False, "error": str(exc)}, explanation_base, str(exc))
     finally:
-        if "proc" in locals():
-            unregister_process(session_id, proc)
         Path(rc_path).unlink(missing_ok=True)
 
     # Success condition is the ACTUAL behavior (port 6200 opened and a
