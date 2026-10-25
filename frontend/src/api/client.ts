@@ -141,5 +141,5 @@ export interface AwarenessScenario {
   title: string;
   brand: string;
   narrative: string;
-  steps: Array<{ id: string; prompt: string; options: string[] }>;
+  steps: Array<{ id: string; prompt: string; red_flag: string; safe_option: string; options: string[] }>;
 }

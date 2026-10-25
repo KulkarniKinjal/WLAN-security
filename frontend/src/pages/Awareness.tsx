@@ -91,11 +91,40 @@ export default function Awareness() {
               </div>
               <div className="grid gap-2">
                 {step.options.map((opt) => (
-                  <button key={opt} onClick={() => choose(step.id, opt)} className="text-left text-sm border border-slateblue/20 rounded-md px-3 py-2 hover:border-teal focus-ring">
+                  <button
+                    key={opt}
+                    onClick={() => choose(step.id, opt)}
+                    disabled={submitting}
+                    className={`text-left text-sm border rounded-md px-3 py-2 hover:border-teal focus-ring ${
+                      decisions[step.id] === opt
+                        ? "border-teal bg-iceblue font-medium"
+                        : "border-slateblue/20"
+                    }`}
+                  >
                     {opt}
                   </button>
                 ))}
               </div>
+              {decisions[step.id] && (
+                <div className={`rounded-md border p-3 text-sm ${
+                  decisions[step.id] === step.safe_option
+                    ? "border-green-200 bg-green-50 text-green-900"
+                    : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}>
+                  <div className="font-semibold">
+                    {decisions[step.id] === step.safe_option ? "Good decision" : "Think twice"}
+                  </div>
+                  <div className="mt-1">
+                    You chose: <span className="font-medium">{decisions[step.id]}</span>
+                  </div>
+                  {decisions[step.id] !== step.safe_option && (
+                    <div className="mt-1">
+                      Safer choice: <span className="font-medium">{step.safe_option}</span>
+                    </div>
+                  )}
+                  <div className="mt-1 text-xs">{step.red_flag}</div>
+                </div>
+              )}
             </div>
           ))}
           <p className="text-xs text-slateblue/50">If you choose to "proceed", any credential field in a real version of this simulator would only ever accept a fixed dummy value -- never free text.</p>

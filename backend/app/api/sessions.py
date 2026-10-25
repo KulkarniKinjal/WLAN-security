@@ -146,7 +146,16 @@ def create_metasploit_session(payload: SessionCreateMetasploit, db: DBSession = 
 def list_awareness_scenarios():
     return [
         {"id": s.id, "title": s.title, "brand": s.brand, "narrative": s.narrative,
-         "steps": [{"id": st.id, "prompt": st.prompt, "options": st.options} for st in s.steps]}
+         "steps": [
+             {
+                 "id": st.id,
+                 "prompt": st.prompt,
+                 "red_flag": st.red_flag,
+                 "safe_option": st.safe_option,
+                 "options": st.options,
+             }
+             for st in s.steps
+         ]}
         for s in awareness_adapter.SCENARIOS.values()
     ]
 
